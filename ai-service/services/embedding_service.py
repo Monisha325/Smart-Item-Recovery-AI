@@ -5,7 +5,7 @@ from sentence_transformers import SentenceTransformer
 
 logger = logging.getLogger(__name__)
 
-MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+MODEL_NAME = "sentence-transformers/paraphrase-MiniLM-L3-v2"
 
 _model: SentenceTransformer | None = None
 
