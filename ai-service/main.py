@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.timeout import TimeoutMiddleware
+# from starlette.middleware.timeout import TimeoutMiddleware
 
 from core.config import PORT, CLIENT_URL, BACKEND_URL
 from core.security import verify_api_key
@@ -59,7 +59,7 @@ app = FastAPI(
 )
 
 # ── Request timeout (30 s) ────────────────────────────────────────────────────
-app.add_middleware(TimeoutMiddleware, timeout=30)
+# app.add_middleware(TimeoutMiddleware, timeout=30)
 
 # ── CORS — restrict in production ─────────────────────────────────────────────
 _is_prod = os.getenv("NODE_ENV") == "production"
