@@ -6,7 +6,6 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-# from starlette.middleware.timeout import TimeoutMiddleware
 
 from core.config import PORT, CLIENT_URL, BACKEND_URL
 from core.security import verify_api_key
@@ -33,23 +32,10 @@ _models_loaded: bool = False
 async def lifespan(app: FastAPI):
     global _start_time, _models_loaded
     _start_time = time.perf_counter()
-    loop = asyncio.get_event_loop()
 
-    logger.info("Loading embedding model …")
-    t0 = time.perf_counter()
-    await loop.run_in_executor(None, emb_svc.load_model)
-    logger.info("Embedding model ready in %.2fs", time.perf_counter() - t0)
-
-    logger.info("Loading image classification model …")
-    t0 = time.perf_counter()
-    await loop.run_in_executor(None, img_svc.load_model)
-    logger.info("Image model ready in %.2fs", time.perf_counter() - t0)
+    logger.info("AI service starting without model preload (Render free tier mode)")
 
     _models_loaded = True
-    logger.info(
-        "All models loaded — total startup %.2fs — service accepting requests",
-        time.perf_counter() - _start_time,
-    )
     yield
 
 
@@ -58,10 +44,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ── Request timeout (30 s) ────────────────────────────────────────────────────
-# app.add_middleware(TimeoutMiddleware, timeout=30)
-
-# ── CORS — restrict in production ─────────────────────────────────────────────
+# ── CORS ─────────────────────────────────────────────────────────────
 _is_prod = os.getenv("NODE_ENV") == "production"
 _allowed_origins = [CLIENT_URL, BACKEND_URL] if _is_prod else ["*"]
 
@@ -72,8 +55,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# ── Health (no auth) ──────────────────────────────────────────────────────────
+# ── Health ───────────────────────────────────────────────────────────
 
 @app.get("/health", response_model=HealthResponse)
 def health():
@@ -83,8 +65,7 @@ def health():
         uptime_seconds=time.perf_counter() - _start_time if _start_time else 0.0,
     )
 
-
-# ── Embedding ─────────────────────────────────────────────────────────────────
+# ── Embedding ────────────────────────────────────────────────────────
 
 @app.post("/embed", response_model=EmbedResponse, dependencies=[Depends(verify_api_key)])
 async def embed(body: EmbedRequest):
@@ -92,8 +73,7 @@ async def embed(body: EmbedRequest):
     vector = await loop.run_in_executor(None, emb_svc.generate_embedding, body.text)
     return EmbedResponse(embedding=vector)
 
-
-# ── Image labels ──────────────────────────────────────────────────────────────
+# ── Image labels ─────────────────────────────────────────────────────
 
 @app.post("/image-labels", response_model=ImageLabelsResponse, dependencies=[Depends(verify_api_key)])
 async def image_labels(file: UploadFile = File(...)):
@@ -102,8 +82,7 @@ async def image_labels(file: UploadFile = File(...)):
     labels = await loop.run_in_executor(None, img_svc.extract_labels, image_bytes)
     return ImageLabelsResponse(labels=labels)
 
-
-# ── Cosine similarity ─────────────────────────────────────────────────────────
+# ── Cosine similarity ────────────────────────────────────────────────
 
 @app.post("/similarity", response_model=SimilarityResponse, dependencies=[Depends(verify_api_key)])
 async def similarity(body: SimilarityRequest):
@@ -111,8 +90,7 @@ async def similarity(body: SimilarityRequest):
     score = await loop.run_in_executor(None, cosine_similarity, body.embedding_a, body.embedding_b)
     return SimilarityResponse(score=score)
 
-
-# ── Entrypoint ────────────────────────────────────────────────────────────────
+# ── Entrypoint ───────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     import uvicorn
