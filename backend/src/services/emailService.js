@@ -52,9 +52,9 @@ const emailService = {
         subject: `Verify your email — ${APP_NAME}`,
         html:    baseTemplate('Verify your email address', body),
       });
-      logger.info(`EMAIL ✓ verification sent to=${to} link=${link}`);
+      logger.info(`EMAIL_SENT ✓ verification to=${to} link=${link}`);
     } catch (err) {
-      logger.error(`EMAIL ✗ verification failed to=${to} error="${err.message}"`);
+      logger.error(`EMAIL_FAILED ✗ verification to=${to} error="${err.message}"`);
       throw err; // re-throw so authService fire-and-forget .catch() receives it
     }
   },
@@ -83,9 +83,9 @@ const emailService = {
         subject: `Reset your password — ${APP_NAME}`,
         html:    baseTemplate('Reset your password', body),
       });
-      logger.info(`EMAIL ✓ password reset sent to=${to}`);
+      logger.info(`EMAIL_SENT ✓ password-reset to=${to}`);
     } catch (err) {
-      logger.error(`EMAIL ✗ password reset failed to=${to} error="${err.message}"`);
+      logger.error(`EMAIL_FAILED ✗ password-reset to=${to} error="${err.message}"`);
       throw err;
     }
   },

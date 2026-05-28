@@ -16,12 +16,12 @@ const transporter = nodemailer.createTransport({
 transporter.verify((err) => {
   if (err) {
     logger.error(
-      `EMAIL ✗ SMTP not ready — host=${process.env.EMAIL_HOST} ` +
+      `SMTP_FAILED ✗ host=${process.env.EMAIL_HOST} ` +
       `user=${process.env.EMAIL_USER} error="${err.message}"`
     );
   } else {
     logger.info(
-      `EMAIL ✓ SMTP ready — host=${process.env.EMAIL_HOST} ` +
+      `SMTP_READY ✓ host=${process.env.EMAIL_HOST} ` +
       `user=${process.env.EMAIL_USER}`
     );
   }

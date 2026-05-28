@@ -60,11 +60,10 @@ const authService = {
 
     const isDev = process.env.NODE_ENV !== 'production';
 
-    // 4. Generate verification token (24h TTL)
     const emailVerificationToken   = uuidv4();
     const emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    logger.info(`VERIFY_TOKEN ✓ generated email=${data.email} expires=${emailVerificationExpires.toISOString()} isDev=${isDev}`);
 
-    // 5. Create user — auto-verify in development so SMTP is not required
     await userRepo.create({
       name:  data.name,
       email: data.email,
@@ -81,10 +80,10 @@ const authService = {
       return { message: 'Account created. You can log in immediately (dev mode).', devAutoVerified: true };
     }
 
-    // 6. Fire-and-forget verification email (production only)
+    logger.info(`EMAIL_SEND_ATTEMPT ✓ queuing verification email=${data.email}`);
     emailService
       .sendVerificationEmail(data.email, emailVerificationToken)
-      .catch(err => logger.error(`EMAIL ✗ fire-and-forget failed email=${data.email} error="${err.message}"`));
+      .catch(err => logger.error(`EMAIL_FAILED ✗ fire-and-forget email=${data.email} error="${err.message}"`));
 
     // 7. No JWT yet — user must verify first
     return { message: 'Verification email sent. Please check your inbox.' };
