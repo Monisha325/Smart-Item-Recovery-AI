@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
 import { usePageTitle } from '../../hooks/usePageTitle';
@@ -51,6 +51,7 @@ function Field({ label, error, hint, children }) {
 
 export default function RegisterPage() {
   usePageTitle('Create account');
+  const navigate = useNavigate();
   const [submitted, setSubmitted] = useState(false);
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm({
@@ -59,10 +60,25 @@ export default function RegisterPage() {
 
   const onSubmit = async ({ confirmPassword: _c, ...data }) => {
     try {
-      await api.post('/api/auth/register', data);
+      const res = await api.post('/api/auth/register', data);
+      if (res.data?.data?.devAutoVerified) {
+        toast.success('Account created — log in now');
+        navigate('/login');
+        return;
+      }
       setSubmitted(true);
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Registration failed');
+      const serverMsg = err.response?.data?.message;
+      const isNetwork = !err.response;
+      const msg = serverMsg
+        || (isNetwork ? 'Cannot reach server — check your connection or try again' : 'Registration failed');
+      console.error('[Register] failed:', {
+        status: err.response?.status,
+        data:   err.response?.data,
+        code:   err.code,
+        msg:    err.message,
+      });
+      toast.error(msg);
     }
   };
 

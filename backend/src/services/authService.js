@@ -50,21 +50,29 @@ const authService = {
     // 3. Hash password
     const password = await bcrypt.hash(data.password, 12);
 
+    const isDev = process.env.NODE_ENV !== 'production';
+
     // 4. Generate verification token (24h TTL)
     const emailVerificationToken   = uuidv4();
     const emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-    // 5. Create user — not yet verified
+    // 5. Create user — auto-verify in development so SMTP is not required
     await userRepo.create({
       name:  data.name,
       email: data.email,
       password,
       campusId: data.campusId,
-      emailVerificationToken,
-      emailVerificationExpires,
+      isVerified: isDev,
+      emailVerificationToken:   isDev ? undefined : emailVerificationToken,
+      emailVerificationExpires: isDev ? undefined : emailVerificationExpires,
     });
 
-    // 6. Fire-and-forget verification email
+    if (isDev) {
+      logger.info('Dev mode — user auto-verified, skipping verification email');
+      return { message: 'Account created. You can log in immediately (dev mode).', devAutoVerified: true };
+    }
+
+    // 6. Fire-and-forget verification email (production only)
     emailService
       .sendVerificationEmail(data.email, emailVerificationToken)
       .catch(err => logger.error('Verification email failed:', err.message));

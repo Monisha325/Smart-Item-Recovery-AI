@@ -29,8 +29,20 @@ app.set('trust proxy', 1);
 
 // ── Security & compression ───────────────────────────────────────────────────
 app.use(helmet());
+
+const ALLOWED_ORIGINS = (process.env.CLIENT_URL || 'http://localhost:5173')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5173',
+  origin: (origin, callback) => {
+    // Allow non-browser requests (Postman, curl, health checks from Render)
+    if (!origin) return callback(null, true);
+    if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+    logger.warn(`CORS blocked: origin="${origin}" not in [${ALLOWED_ORIGINS.join(', ')}]`);
+    callback(new Error(`CORS: origin '${origin}' not allowed`));
+  },
   credentials: true,
 }));
 app.use(compression());
