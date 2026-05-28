@@ -19,6 +19,7 @@ const matchRoutes        = require('./routes/matches');
 const notificationRoutes = require('./routes/notifications');
 const qrRoutes           = require('./routes/qr');
 const adminRoutes        = require('./routes/admin');
+const maintenanceRoutes  = require('./routes/maintenance');
 
 const app  = express();
 const PORT = process.env.PORT || 5000;
@@ -122,6 +123,7 @@ app.use('/api/matches',       matchRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/qr',            qrRoutes);
 app.use('/api/admin',         adminRoutes);
+app.use('/api/maintenance',   maintenanceRoutes);
 
 // ── Error handler (must be last) ─────────────────────────────────────────────
 app.use(errorHandler);
