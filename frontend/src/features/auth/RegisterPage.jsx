@@ -55,6 +55,7 @@ export default function RegisterPage() {
   const [submitted, setSubmitted] = useState(false);
   const [submittedEmail, setSubmittedEmail] = useState('');
   const [resending, setResending] = useState(false);
+  const [emailFailed, setEmailFailed] = useState(false);
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm({
     resolver: zodResolver(schema),
@@ -71,16 +72,22 @@ export default function RegisterPage() {
       setSubmittedEmail(data.email);
       setSubmitted(true);
     } catch (err) {
+      const status    = err.response?.status;
       const serverMsg = err.response?.data?.message;
       const isNetwork = !err.response;
+
+      console.error('[Register] failed:', { status, data: err.response?.data, code: err.code });
+
+      // 502 = account was created but email send failed — show resend screen
+      if (status === 502) {
+        setSubmittedEmail(data.email);
+        setEmailFailed(true);
+        setSubmitted(true);
+        return;
+      }
+
       const msg = serverMsg
         || (isNetwork ? 'Cannot reach server — check your connection or try again' : 'Registration failed');
-      console.error('[Register] failed:', {
-        status: err.response?.status,
-        data:   err.response?.data,
-        code:   err.code,
-        msg:    err.message,
-      });
       toast.error(msg);
     }
   };
@@ -100,22 +107,42 @@ export default function RegisterPage() {
   if (submitted) {
     return (
       <div className="text-center">
-        <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-          <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-          </svg>
+        <div className={`w-16 h-16 ${emailFailed ? 'bg-yellow-100' : 'bg-green-100'} rounded-full flex items-center justify-center mx-auto mb-4`}>
+          {emailFailed ? (
+            <svg className="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            </svg>
+          ) : (
+            <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          )}
         </div>
-        <h2 className="text-xl font-bold text-gray-900 mb-2">Check your email</h2>
-        <p className="text-sm text-gray-600 mb-6">
-          We sent a verification link to your address. Click it to activate your account.
+
+        <h2 className="text-xl font-bold text-gray-900 mb-2">
+          {emailFailed ? 'Account created — email not sent' : 'Check your email'}
+        </h2>
+        <p className="text-sm text-gray-600 mb-4">
+          {emailFailed
+            ? 'Your account was created but the verification email could not be sent. Use the button below to resend it.'
+            : 'We sent a verification link to your address. Click it to activate your account.'}
         </p>
+        {emailFailed && (
+          <p className="text-xs text-gray-400 mb-4">{submittedEmail}</p>
+        )}
+
         <button
           onClick={handleResend}
           disabled={resending}
-          className="block w-full py-2 text-sm text-blue-600 font-medium hover:underline disabled:opacity-50 disabled:cursor-not-allowed mb-3"
+          className={`block w-full py-2.5 rounded-lg text-sm font-semibold mb-3 disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${
+            emailFailed
+              ? 'bg-blue-600 text-white hover:bg-blue-700'
+              : 'text-blue-600 hover:underline'
+          }`}
         >
-          {resending ? 'Sending…' : "Didn't receive it? Resend email"}
+          {resending ? 'Sending…' : emailFailed ? 'Send verification email' : "Didn't receive it? Resend email"}
         </button>
+
         <Link to="/login" className="text-blue-600 font-medium hover:underline text-sm">
           Back to sign in
         </Link>

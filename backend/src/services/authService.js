@@ -85,12 +85,20 @@ const authService = {
       return { message: 'Account created. You can log in immediately (dev mode).', devAutoVerified: true };
     }
 
-    logger.info(`EMAIL_SEND_ATTEMPT ✓ queuing verification email=${data.email}`);
-    emailService
-      .sendVerificationEmail(data.email, emailVerificationToken)
-      .catch(err => logger.error(`EMAIL_FAILED ✗ fire-and-forget email=${data.email} error="${err.message}"`));
+    logger.info(`EMAIL_SEND_ATTEMPT ✓ email=${data.email}`);
+    try {
+      await emailService.sendVerificationEmail(data.email, emailVerificationToken);
+      // EMAIL_SENT ✓ is logged inside emailService
+    } catch (err) {
+      // Email failed — user exists in DB but can't verify yet. Tell them honestly.
+      logger.error(`EMAIL_FAILED ✗ email=${data.email} error="${err.message}"`);
+      throw apiError(
+        'Account created but we could not send the verification email. ' +
+        'Please use "Resend verification email" on the login page to try again.',
+        502
+      );
+    }
 
-    // 7. No JWT yet — user must verify first
     return { message: 'Verification email sent. Please check your inbox.' };
   },
 
@@ -98,7 +106,10 @@ const authService = {
     if (!token) throw apiError('Token is required', 400);
 
     const user = await userRepo.findByVerificationToken(token);
-    if (!user) throw apiError('Invalid or expired verification link', 400);
+    if (!user) {
+      logger.warn(`VERIFY_FAILED ✗ token not found or expired token=${token.slice(0, 8)}...`);
+      throw apiError('Invalid or expired verification link', 400);
+    }
 
     await userRepo.updateById(user._id, {
       $set:   { isVerified: true },
@@ -106,6 +117,7 @@ const authService = {
     });
 
     const updated = await userRepo.findById(user._id);
+    logger.info(`VERIFY_SUCCESS ✓ email=${updated.email}`);
     return { token: signToken(updated), user: safeUser(updated) };
   },
 
@@ -159,15 +171,24 @@ const authService = {
   async resendVerification(email) {
     const user = await userRepo.findByEmail(email);
     if (!user || user.isVerified) {
+      // Silent — do not leak whether the account exists
       return { message: 'If your account exists and is unverified, a new link has been sent.' };
     }
     const emailVerificationToken   = uuidv4();
     const emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
     await userRepo.updateById(user._id, { emailVerificationToken, emailVerificationExpires });
-    logger.info(`REGISTER resend requested email=${email}`);
-    emailService
-      .sendVerificationEmail(email, emailVerificationToken)
-      .catch(err => logger.error(`EMAIL ✗ resend failed email=${email} error="${err.message}"`));
+    logger.info(`VERIFY_TOKEN ✓ resend generated email=${email}`);
+    logger.info(`EMAIL_SEND_ATTEMPT ✓ resend email=${email}`);
+    try {
+      await emailService.sendVerificationEmail(email, emailVerificationToken);
+      // EMAIL_SENT ✓ logged inside emailService
+    } catch (err) {
+      logger.error(`EMAIL_FAILED ✗ resend email=${email} error="${err.message}"`);
+      throw apiError(
+        'Could not send verification email — SMTP error. Please try again later.',
+        502
+      );
+    }
     return { message: 'If your account exists and is unverified, a new link has been sent.' };
   },
 
