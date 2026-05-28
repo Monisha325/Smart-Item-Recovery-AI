@@ -48,11 +48,16 @@ const authService = {
       }
     }
 
-    // 2. Check uniqueness
+    // 2. Check uniqueness — allow re-registration if account is unverified
     const existing = await userRepo.findByEmail(data.email);
     if (existing) {
-      logger.warn(`REGISTER ✗ duplicate email=${data.email}`);
-      throw apiError('Email already registered', 409);
+      if (existing.isVerified) {
+        logger.warn(`REGISTER ✗ duplicate (verified) email=${data.email}`);
+        throw apiError('Email already registered', 409);
+      }
+      // Unverified account — delete it so the user can start fresh
+      logger.info(`REGISTER replacing unverified account email=${data.email}`);
+      await userRepo.deleteById(existing._id);
     }
 
     // 3. Hash password
