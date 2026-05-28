@@ -27,24 +27,47 @@ const isProd = process.env.NODE_ENV === 'production';
 // ── Trust proxy (required for Render / reverse-proxied deploys) ─────────────
 app.set('trust proxy', 1);
 
-// ── Security & compression ───────────────────────────────────────────────────
-app.use(helmet());
-
-const ALLOWED_ORIGINS = (process.env.CLIENT_URL || 'http://localhost:5173')
+// ── CORS — must be first so preflight OPTIONS never hits other middleware ─────
+const EXACT_ORIGINS = (process.env.CLIENT_URL || 'http://localhost:5173')
   .split(',')
   .map(s => s.trim())
   .filter(Boolean);
 
-app.use(cors({
-  origin: (origin, callback) => {
-    // Allow non-browser requests (Postman, curl, health checks from Render)
+function isOriginAllowed(origin) {
+  // Exact match: production URL or any entry in CLIENT_URL
+  if (EXACT_ORIGINS.includes(origin)) return true;
+  // Wildcard: any Vercel preview deployment  (https://*.vercel.app)
+  if (origin.startsWith('https://') && origin.endsWith('.vercel.app')) return true;
+  // Local development
+  if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) return true;
+  return false;
+}
+
+const corsOptions = {
+  origin(origin, callback) {
+    // Allow requests with no Origin header (Postman, curl, Render health probes)
     if (!origin) return callback(null, true);
-    if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
-    logger.warn(`CORS blocked: origin="${origin}" not in [${ALLOWED_ORIGINS.join(', ')}]`);
-    callback(new Error(`CORS: origin '${origin}' not allowed`));
+
+    if (isOriginAllowed(origin)) {
+      logger.info(`CORS ✓  ${origin}`);
+      return callback(null, true);
+    }
+
+    logger.warn(`CORS ✗  "${origin}" | exact=[${EXACT_ORIGINS.join(', ')}] + *.vercel.app`);
+    return callback(new Error(`CORS: origin '${origin}' not allowed`));
   },
-  credentials: true,
-}));
+  credentials:    true,
+  methods:        ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  optionsSuccessStatus: 200,
+};
+
+// Respond to ALL preflight requests immediately — before helmet, rate-limiter, or any route
+app.options('*', cors(corsOptions));
+
+// ── Security & compression ───────────────────────────────────────────────────
+app.use(helmet());
+app.use(cors(corsOptions));
 app.use(compression());
 app.use(morgan(isProd ? 'combined' : 'dev'));
 
