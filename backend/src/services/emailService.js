@@ -1,4 +1,5 @@
 const transporter = require('../config/email');
+const logger      = require('../utils/logger');
 
 const APP_NAME = 'Smart Campus Lost & Found';
 const FROM = () => `"${APP_NAME}" <${process.env.EMAIL_USER}>`;
@@ -43,12 +44,19 @@ const emailService = {
         Or copy and paste this URL:<br>
         <a href="${link}" style="color:#1d4ed8;word-break:break-all;">${link}</a>
       </p>`;
-    await transporter.sendMail({
-      from: FROM(),
-      to,
-      subject: `Verify your email — ${APP_NAME}`,
-      html: baseTemplate('Verify your email address', body),
-    });
+
+    try {
+      await transporter.sendMail({
+        from:    FROM(),
+        to,
+        subject: `Verify your email — ${APP_NAME}`,
+        html:    baseTemplate('Verify your email address', body),
+      });
+      logger.info(`EMAIL ✓ verification sent to=${to} link=${link}`);
+    } catch (err) {
+      logger.error(`EMAIL ✗ verification failed to=${to} error="${err.message}"`);
+      throw err; // re-throw so authService fire-and-forget .catch() receives it
+    }
   },
 
   async sendPasswordResetEmail(to, token) {
@@ -67,12 +75,19 @@ const emailService = {
         Or copy and paste this URL:<br>
         <a href="${link}" style="color:#1d4ed8;word-break:break-all;">${link}</a>
       </p>`;
-    await transporter.sendMail({
-      from: FROM(),
-      to,
-      subject: `Reset your password — ${APP_NAME}`,
-      html: baseTemplate('Reset your password', body),
-    });
+
+    try {
+      await transporter.sendMail({
+        from:    FROM(),
+        to,
+        subject: `Reset your password — ${APP_NAME}`,
+        html:    baseTemplate('Reset your password', body),
+      });
+      logger.info(`EMAIL ✓ password reset sent to=${to}`);
+    } catch (err) {
+      logger.error(`EMAIL ✗ password reset failed to=${to} error="${err.message}"`);
+      throw err;
+    }
   },
 };
 

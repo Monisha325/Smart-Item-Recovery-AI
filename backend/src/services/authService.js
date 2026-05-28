@@ -37,15 +37,23 @@ function safeUser(doc) {
 
 const authService = {
   async register(data) {
+    logger.info(`REGISTER attempt email=${data.email} allowedDomains=[${ALLOWED_DOMAINS.join(', ') || 'any'}]`);
+
     // 1. Validate email domain
     if (ALLOWED_DOMAINS.length) {
       const valid = ALLOWED_DOMAINS.some(d => data.email.toLowerCase().endsWith(`@${d}`));
-      if (!valid) throw apiError('Email domain is not allowed', 400);
+      if (!valid) {
+        logger.warn(`REGISTER ✗ domain rejected email=${data.email}`);
+        throw apiError('Email domain is not allowed', 400);
+      }
     }
 
     // 2. Check uniqueness
     const existing = await userRepo.findByEmail(data.email);
-    if (existing) throw apiError('Email already registered', 409);
+    if (existing) {
+      logger.warn(`REGISTER ✗ duplicate email=${data.email}`);
+      throw apiError('Email already registered', 409);
+    }
 
     // 3. Hash password
     const password = await bcrypt.hash(data.password, 12);
@@ -67,15 +75,16 @@ const authService = {
       emailVerificationExpires: isDev ? undefined : emailVerificationExpires,
     });
 
+    logger.info(`REGISTER ✓ user created email=${data.email} isDev=${isDev}`);
+
     if (isDev) {
-      logger.info('Dev mode — user auto-verified, skipping verification email');
       return { message: 'Account created. You can log in immediately (dev mode).', devAutoVerified: true };
     }
 
     // 6. Fire-and-forget verification email (production only)
     emailService
       .sendVerificationEmail(data.email, emailVerificationToken)
-      .catch(err => logger.error('Verification email failed:', err.message));
+      .catch(err => logger.error(`EMAIL ✗ fire-and-forget failed email=${data.email} error="${err.message}"`));
 
     // 7. No JWT yet — user must verify first
     return { message: 'Verification email sent. Please check your inbox.' };
