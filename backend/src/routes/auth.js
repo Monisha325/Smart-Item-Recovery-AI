@@ -8,9 +8,11 @@ const {
   loginSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
+  resendVerificationSchema,
 } = require('../validators/authValidators');
 
-router.post('/register',         authLimiter, validateRequest(registerSchema),       authController.register);
+router.post('/register',              authLimiter, validateRequest(registerSchema),             authController.register);
+router.post('/resend-verification',   authLimiter, validateRequest(resendVerificationSchema),   authController.resendVerification);
 router.post('/login',            authLimiter, validateRequest(loginSchema),            authController.login);
 router.get( '/verify-email',                                                           authController.verifyEmail);
 router.post('/forgot-password',  authLimiter, validateRequest(forgotPasswordSchema),   authController.forgotPassword);

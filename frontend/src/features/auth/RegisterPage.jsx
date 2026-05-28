@@ -53,6 +53,8 @@ export default function RegisterPage() {
   usePageTitle('Create account');
   const navigate = useNavigate();
   const [submitted, setSubmitted] = useState(false);
+  const [submittedEmail, setSubmittedEmail] = useState('');
+  const [resending, setResending] = useState(false);
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm({
     resolver: zodResolver(schema),
@@ -66,6 +68,7 @@ export default function RegisterPage() {
         navigate('/login');
         return;
       }
+      setSubmittedEmail(data.email);
       setSubmitted(true);
     } catch (err) {
       const serverMsg = err.response?.data?.message;
@@ -82,6 +85,18 @@ export default function RegisterPage() {
     }
   };
 
+  const handleResend = async () => {
+    setResending(true);
+    try {
+      await api.post('/api/auth/resend-verification', { email: submittedEmail });
+      toast.success('Verification email resent — check your inbox');
+    } catch {
+      toast.error('Could not resend — try again in a moment');
+    } finally {
+      setResending(false);
+    }
+  };
+
   if (submitted) {
     return (
       <div className="text-center">
@@ -94,6 +109,13 @@ export default function RegisterPage() {
         <p className="text-sm text-gray-600 mb-6">
           We sent a verification link to your address. Click it to activate your account.
         </p>
+        <button
+          onClick={handleResend}
+          disabled={resending}
+          className="block w-full py-2 text-sm text-blue-600 font-medium hover:underline disabled:opacity-50 disabled:cursor-not-allowed mb-3"
+        >
+          {resending ? 'Sending…' : "Didn't receive it? Resend email"}
+        </button>
         <Link to="/login" className="text-blue-600 font-medium hover:underline text-sm">
           Back to sign in
         </Link>

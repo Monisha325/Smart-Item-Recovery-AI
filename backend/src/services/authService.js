@@ -152,6 +152,21 @@ const authService = {
     return { message: 'Password reset successfully. Please log in.' };
   },
 
+  async resendVerification(email) {
+    const user = await userRepo.findByEmail(email);
+    if (!user || user.isVerified) {
+      return { message: 'If your account exists and is unverified, a new link has been sent.' };
+    }
+    const emailVerificationToken   = uuidv4();
+    const emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await userRepo.updateById(user._id, { emailVerificationToken, emailVerificationExpires });
+    logger.info(`REGISTER resend requested email=${email}`);
+    emailService
+      .sendVerificationEmail(email, emailVerificationToken)
+      .catch(err => logger.error(`EMAIL ✗ resend failed email=${email} error="${err.message}"`));
+    return { message: 'If your account exists and is unverified, a new link has been sent.' };
+  },
+
   async getMe(userId) {
     const user = await userRepo.findById(userId);
     if (!user) throw apiError('User not found', 404);

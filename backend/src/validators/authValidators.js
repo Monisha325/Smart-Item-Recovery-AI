@@ -41,4 +41,8 @@ const resetPasswordSchema = z.object({
   newPassword: passwordSchema,
 });
 
-module.exports = { registerSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema };
+const resendVerificationSchema = z.object({
+  email: z.string().email(),
+});
+
+module.exports = { registerSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema, resendVerificationSchema };

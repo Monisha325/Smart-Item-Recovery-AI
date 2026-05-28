@@ -37,6 +37,13 @@ const authController = {
     } catch (err) { next(err); }
   },
 
+  resendVerification: async (req, res, next) => {
+    try {
+      const result = await authService.resendVerification(req.body.email);
+      return success(res, result, result.message);
+    } catch (err) { next(err); }
+  },
+
   getMe: async (req, res, next) => {
     try {
       const user = await authService.getMe(req.user.userId);
