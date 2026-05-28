@@ -27,42 +27,51 @@ const isProd = process.env.NODE_ENV === 'production';
 // ── Trust proxy (required for Render / reverse-proxied deploys) ─────────────
 app.set('trust proxy', 1);
 
-// ── CORS — must be first so preflight OPTIONS never hits other middleware ─────
+// ── CORS — declared first so OPTIONS preflight bypasses helmet + rate-limiter ─
 const EXACT_ORIGINS = (process.env.CLIENT_URL || 'http://localhost:5173')
   .split(',')
   .map(s => s.trim())
   .filter(Boolean);
 
+// Matches any subdomain of vercel.app: https://<anything>.vercel.app
+const VERCEL_RE = /^https:\/\/[a-zA-Z0-9-]+\.vercel\.app$/;
+
+// Matches http://localhost:<port> or http://127.0.0.1:<port>
+const LOCAL_RE  = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+
 function isOriginAllowed(origin) {
-  // Exact match: production URL or any entry in CLIENT_URL
-  if (EXACT_ORIGINS.includes(origin)) return true;
-  // Wildcard: any Vercel preview deployment  (https://*.vercel.app)
-  if (origin.startsWith('https://') && origin.endsWith('.vercel.app')) return true;
-  // Local development
-  if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) return true;
-  return false;
+  if (VERCEL_RE.test(origin))        return 'vercel';
+  if (EXACT_ORIGINS.includes(origin)) return 'exact';
+  if (LOCAL_RE.test(origin))         return 'local';
+  return null;
 }
 
 const corsOptions = {
   origin(origin, callback) {
-    // Allow requests with no Origin header (Postman, curl, Render health probes)
+    // No Origin header → Postman / curl / Render health probe — allow
     if (!origin) return callback(null, true);
 
-    if (isOriginAllowed(origin)) {
-      logger.info(`CORS ✓  ${origin}`);
+    const reason = isOriginAllowed(origin);
+    if (reason) {
+      logger.info(`CORS ✓ origin=${origin} reason=${reason}`);
       return callback(null, true);
     }
 
-    logger.warn(`CORS ✗  "${origin}" | exact=[${EXACT_ORIGINS.join(', ')}] + *.vercel.app`);
+    logger.warn(
+      `CORS ✗ origin=${origin} ` +
+      `vercel=${VERCEL_RE.test(origin)} ` +
+      `exact=${EXACT_ORIGINS.includes(origin)} ` +
+      `exactList=[${EXACT_ORIGINS.join(', ')}]`
+    );
     return callback(new Error(`CORS: origin '${origin}' not allowed`));
   },
-  credentials:    true,
-  methods:        ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials:         true,
+  methods:             ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders:      ['Content-Type', 'Authorization'],
   optionsSuccessStatus: 200,
 };
 
-// Respond to ALL preflight requests immediately — before helmet, rate-limiter, or any route
+// Handle every preflight before helmet or the rate-limiter can intercept it
 app.options('*', cors(corsOptions));
 
 // ── Security & compression ───────────────────────────────────────────────────
