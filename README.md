@@ -15,7 +15,7 @@ CampusFind is an AI-powered lost-and-found platform for university campuses. Stu
 - **Email verification + password reset** — full auth lifecycle via Nodemailer
 - **Cloudinary image uploads** — up to 5 images per item, AI-labelled on upload
 - **Responsive UI** — mobile-first with Tailwind CSS, skeleton loading states, confirm dialogs
-- **Production-ready** — sanitisation (mongo-sanitize + xss-clean), rate limiting, compression, trust-proxy, code splitting
+- **Production-ready** — sanitisation (mysql escaping + xss-clean), rate limiting, compression, trust-proxy, code splitting
 
 ---
 
@@ -29,8 +29,8 @@ CampusFind is an AI-powered lost-and-found platform for university campuses. Stu
 | Maps          | Leaflet + OpenStreetMap (react-leaflet)           |
 | Charts        | Recharts                                          |
 | QR codes      | qrcode.react                                      |
-| Backend       | Node.js 18, Express, Mongoose                     |
-| Database      | MySql                    |
+| Backend       | Node.js 18, Express, Sequelize                    |
+| Database      | MySQL                                             |
 | Auth          | JWT (jsonwebtoken), bcryptjs                      |
 | File storage  | Cloudinary                                        |
 | Email         | Nodemailer (SMTP)                                 |
@@ -53,12 +53,12 @@ CampusFind is an AI-powered lost-and-found platform for university campuses. Stu
 ┌─────────────────────────────────────────────────────┐
 │           Express Backend  (Render)                 │
 │   Auth · Items · Matches · Notifications · QR       │
-│   Rate-limit · mongo-sanitize · xss-clean           │
+│   Rate-limit · input sanitisation · xss-clean       │
 └────────┬────────────────────────┬───────────────────┘
-         │ Mongoose               │ HTTP (internal secret)
+         │ Sequelize (mysql2)     │ HTTP (internal secret)
          ▼                        ▼
 ┌─────────────────┐    ┌───────────────────────────────┐
-│  MongoDB     │       │   FastAPI AI Service (Render) │
+│  MySQL           │    │   FastAPI AI Service (Render) │
 │                 │    │   /embed  · /image-labels      │
 │  Users · Items  │    │   sentence-transformers        │
 │  Matches · QR   │    │   ResNet50 image classifier    │
@@ -76,7 +76,7 @@ CampusFind is an AI-powered lost-and-found platform for university campuses. Stu
 
 - Node.js 18+
 - Python 3.10+
-- MongoDB 6+ (local) or a free [MongoDB Atlas](https://cloud.mongodb.com) cluster
+- MySQL 8+ (local) or a free hosted MySQL instance (e.g. [PlanetScale](https://planetscale.com), [Railway](https://railway.app), or Aiven)
 - [Cloudinary](https://cloudinary.com) account (free tier)
 - SMTP credentials (Gmail app password, SendGrid, etc.)
 
@@ -92,7 +92,7 @@ Clone the repo, then start each service in its own terminal.
 cd backend
 npm install
 cp .env.example .env
-# Fill in MONGODB_URI, JWT_SECRET, EMAIL_*, CLOUDINARY_*, AI_SERVICE_SECRET
+# Fill in DATABASE_URL (or DB_HOST/DB_USER/DB_PASS/DB_NAME), JWT_SECRET, EMAIL_*, CLOUDINARY_*, AI_SERVICE_SECRET
 npm run dev          # nodemon, port 5000
 ```
 
@@ -137,10 +137,10 @@ Open [http://localhost:5173](http://localhost:5173).
 ### Backend (`backend/.env`)
 
 | Variable                  | Required | Description                                             |
-|---------------------------|----------|---------------------------------------------------------|
+|---------------------------|----------|-----------------------------------------------------------|
 | `PORT`                    | No       | HTTP port (default: 5000)                               |
 | `NODE_ENV`                | No       | `production` enables combined logging                   |
-| `MONGODB_URI`             | **Yes**  | MongoDB connection string                               |
+| `DATABASE_URL`            | **Yes**  | MySQL connection string (`mysql://user:pass@host:3306/db`) |
 | `JWT_SECRET`              | **Yes**  | Random 32+ char string for signing tokens               |
 | `JWT_EXPIRES_IN`          | No       | Token lifetime (default: `7d`)                          |
 | `CLIENT_URL`              | **Yes**  | Frontend origin for CORS (e.g. `https://app.vercel.app`)|
@@ -158,7 +158,7 @@ Open [http://localhost:5173](http://localhost:5173).
 ### AI Service (`ai-service/.env`)
 
 | Variable            | Required | Description                                  |
-|---------------------|----------|----------------------------------------------|
+|---------------------|----------|-----------------------------------------------|
 | `PORT`              | No       | HTTP port (default: 8000)                    |
 | `AI_SERVICE_SECRET` | No       | Must match backend's `AI_SERVICE_SECRET`     |
 | `CLIENT_URL`        | No       | Allowed CORS origin in production            |
@@ -167,7 +167,7 @@ Open [http://localhost:5173](http://localhost:5173).
 ### Frontend (`frontend/.env`)
 
 | Variable                    | Required | Description                                    |
-|-----------------------------|----------|------------------------------------------------|
+|-----------------------------|----------|--------------------------------------------------|
 | `VITE_API_BASE_URL`         | **Yes**  | Backend URL (e.g. `https://api.onrender.com`)  |
 | `VITE_ALLOWED_EMAIL_DOMAINS`| No       | Campus domains for client-side validation      |
 
@@ -175,14 +175,12 @@ Open [http://localhost:5173](http://localhost:5173).
 
 ## Making a User an Admin
 
-There is no API endpoint for role promotion. Set the role directly in MongoDB:
+There is no API endpoint for role promotion. Set the role directly in MySQL:
 
-```js
-// MongoDB shell / Atlas Data Explorer
-db.users.updateOne(
-  { email: "admin@college.edu" },
-  { $set: { role: "admin" } }
-)
+```sql
+UPDATE users
+SET role = 'admin'
+WHERE email = 'admin@college.edu';
 ```
 
 Admin accounts unlock `GET/PUT/DELETE /api/admin/*`. Admins cannot be banned via the admin panel.
@@ -216,12 +214,12 @@ Admin accounts unlock `GET/PUT/DELETE /api/admin/*`. Admins cannot be banned via
 > **Note:** First deploy downloads PyTorch + model weights (~500 MB) and takes 5–10 minutes.  
 > Render free tier **sleeps after 15 min** of inactivity — the next request triggers a cold start that re-downloads models. Use [Railway](https://railway.app) or Render Starter ($7/mo) for always-on inference.
 
-### MongoDb
+### MySQL
 
-1. Create a free M0 cluster at [cloud.mongodb.com](https://cloud.mongodb.com).
-2. Whitelist IP `0.0.0.0/0` (Render uses dynamic IPs) or use Atlas Private Networking.
-3. Create a database user, copy the connection string into `MONGODB_URI`.
-4. The text index on `items.title + description` is created automatically on first write.
+1. Create a free MySQL instance at [PlanetScale](https://planetscale.com), [Railway](https://railway.app), or Aiven.
+2. If your provider restricts inbound IPs, whitelist Render's egress IPs (Render uses dynamic IPs, so prefer providers with IP-allowlist-free connections or use SSL-required connections).
+3. Create a database and user, copy the connection string into `DATABASE_URL`.
+4. A FULLTEXT index on `items.title + description` is created automatically via the Sequelize migration on first deploy/`npm run migrate`.
 
 ---
 
@@ -257,7 +255,7 @@ All endpoints return `{ success, data, message }`. Auth endpoints rate-limited t
 ### Matches — `/api/matches`
 
 | Method | Path                  | Auth | Description                              |
-|--------|-----------------------|------|------------------------------------------|
+|--------|-----------------------|------|-------------------------------------------|
 | GET    | `/mine`               | JWT  | My matches (as owner of either item)     |
 | GET    | `/item/:itemId`       | JWT  | Matches for a specific item              |
 | POST   | `/:id/accept`         | JWT  | Accept match → both items → CLAIMED      |
@@ -267,7 +265,7 @@ All endpoints return `{ success, data, message }`. Auth endpoints rate-limited t
 ### Notifications — `/api/notifications`
 
 | Method | Path            | Auth | Description                        |
-|--------|-----------------|------|------------------------------------|
+|--------|-----------------|------|-------------------------------------|
 | GET    | `/`             | JWT  | List notifications (unreadOnly, page, limit) |
 | GET    | `/unread-count` | JWT  | `{ count }`                        |
 | PUT    | `/:id/read`     | JWT  | Mark one as read                   |
@@ -276,7 +274,7 @@ All endpoints return `{ success, data, message }`. Auth endpoints rate-limited t
 ### QR Tags — `/api/qr`
 
 | Method | Path               | Auth | Description                             |
-|--------|--------------------|------|-----------------------------------------|
+|--------|--------------------|------|-------------------------------------------|
 | POST   | `/generate`        | JWT  | Generate QR tag for item `{ itemId }`   |
 | GET    | `/item/:itemId`    | JWT  | Get tag for item (404 if none)          |
 | GET    | `/scan/:token`     | —    | Public scan — returns item + owner info |
@@ -285,13 +283,13 @@ All endpoints return `{ success, data, message }`. Auth endpoints rate-limited t
 ### Public Stats — `/api/stats`
 
 | Method | Path    | Auth | Description                                             |
-|--------|---------|------|---------------------------------------------------------|
+|--------|---------|------|-----------------------------------------------------------|
 | GET    | `/`     | —    | `{ totalItems, totalUsers, totalRecovered, activeListings }` |
 
 ### Admin — `/api/admin` (role: admin)
 
 | Method | Path                  | Description                              |
-|--------|-----------------------|------------------------------------------|
+|--------|-----------------------|-------------------------------------------|
 | GET    | `/stats`              | 9-metric dashboard stats                 |
 | GET    | `/users`              | Paginated users (search by name/email)   |
 | PUT    | `/users/:id/ban`      | Toggle isBanned (cannot ban admin)       |
