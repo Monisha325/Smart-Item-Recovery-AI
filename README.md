@@ -30,7 +30,7 @@ CampusFind is an AI-powered lost-and-found platform for university campuses. Stu
 | Charts        | Recharts                                          |
 | QR codes      | qrcode.react                                      |
 | Backend       | Node.js 18, Express, Mongoose                     |
-| Database      | MongoDB (Atlas in production)                     |
+| Database      | MySql                    |
 | Auth          | JWT (jsonwebtoken), bcryptjs                      |
 | File storage  | Cloudinary                                        |
 | Email         | Nodemailer (SMTP)                                 |
@@ -58,7 +58,7 @@ CampusFind is an AI-powered lost-and-found platform for university campuses. Stu
          │ Mongoose               │ HTTP (internal secret)
          ▼                        ▼
 ┌─────────────────┐    ┌───────────────────────────────┐
-│  MongoDB Atlas  │    │   FastAPI AI Service (Render) │
+│  MongoDB     │       │   FastAPI AI Service (Render) │
 │                 │    │   /embed  · /image-labels      │
 │  Users · Items  │    │   sentence-transformers        │
 │  Matches · QR   │    │   ResNet50 image classifier    │
@@ -216,7 +216,7 @@ Admin accounts unlock `GET/PUT/DELETE /api/admin/*`. Admins cannot be banned via
 > **Note:** First deploy downloads PyTorch + model weights (~500 MB) and takes 5–10 minutes.  
 > Render free tier **sleeps after 15 min** of inactivity — the next request triggers a cold start that re-downloads models. Use [Railway](https://railway.app) or Render Starter ($7/mo) for always-on inference.
 
-### MongoDB → Atlas
+### MongoDb
 
 1. Create a free M0 cluster at [cloud.mongodb.com](https://cloud.mongodb.com).
 2. Whitelist IP `0.0.0.0/0` (Render uses dynamic IPs) or use Atlas Private Networking.
