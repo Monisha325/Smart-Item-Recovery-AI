@@ -1,0 +1,227 @@
+const bcrypt = require('bcryptjs');
+const jwt    = require('jsonwebtoken');
+const { v4: uuidv4 } = require('uuid');
+
+const userRepo      = require('../repositories/userRepo');
+const Item          = require('../models/Item');
+const PasswordReset = require('../models/PasswordReset');
+const emailService = require('./emailService');
+const logger       = require('../utils/logger');
+
+const ALLOWED_DOMAINS = (process.env.ALLOWED_EMAIL_DOMAINS || '')
+  .split(',')
+  .map(d => d.trim())
+  .filter(Boolean);
+
+function apiError(message, statusCode = 400) {
+  const err = new Error(message);
+  err.statusCode = statusCode;
+  return err;
+}
+
+function signToken(user) {
+  return jwt.sign(
+    { userId: user._id, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+  );
+}
+
+function safeUser(doc) {
+  const obj = doc.toObject ? doc.toObject() : { ...doc };
+  delete obj.password;
+  delete obj.emailVerificationToken;
+  delete obj.emailVerificationExpires;
+  return obj;
+}
+
+const authService = {
+  async register(data) {
+    logger.info(`REGISTER attempt email=${data.email} allowedDomains=[${ALLOWED_DOMAINS.join(', ') || 'any'}]`);
+
+    // 1. Validate email domain
+    if (ALLOWED_DOMAINS.length) {
+      const valid = ALLOWED_DOMAINS.some(d => data.email.toLowerCase().endsWith(`@${d}`));
+      if (!valid) {
+        logger.warn(`REGISTER ✗ domain rejected email=${data.email}`);
+        throw apiError('Email domain is not allowed', 400);
+      }
+    }
+
+    // 2. Check uniqueness — allow re-registration if account is unverified
+    const existing = await userRepo.findByEmail(data.email);
+    if (existing) {
+      if (existing.isVerified) {
+        logger.warn(`REGISTER ✗ duplicate (verified) email=${data.email}`);
+        throw apiError('Email already registered', 409);
+      }
+      // Unverified account — delete it so the user can start fresh
+      logger.info(`REGISTER replacing unverified account email=${data.email}`);
+      await userRepo.deleteById(existing._id);
+    }
+
+    // 3. Hash password
+    const password = await bcrypt.hash(data.password, 12);
+
+    const isDev = process.env.NODE_ENV !== 'production';
+
+    const emailVerificationToken   = uuidv4();
+    const emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    logger.info(`VERIFY_TOKEN ✓ generated email=${data.email} expires=${emailVerificationExpires.toISOString()} isDev=${isDev}`);
+
+    await userRepo.create({
+      name:  data.name,
+      email: data.email,
+      password,
+      campusId: data.campusId,
+      isVerified: isDev,
+      emailVerificationToken:   isDev ? undefined : emailVerificationToken,
+      emailVerificationExpires: isDev ? undefined : emailVerificationExpires,
+    });
+
+    logger.info(`REGISTER ✓ user created email=${data.email} isDev=${isDev}`);
+
+    if (isDev) {
+      return { message: 'Account created. You can log in immediately (dev mode).', devAutoVerified: true };
+    }
+
+    logger.info(`EMAIL_SEND_ATTEMPT ✓ email=${data.email}`);
+    try {
+      await emailService.sendVerificationEmail(data.email, emailVerificationToken);
+      // EMAIL_SENT ✓ is logged inside emailService
+    } catch (err) {
+      // Email failed — user exists in DB but can't verify yet. Tell them honestly.
+      logger.error(`EMAIL_FAILED ✗ email=${data.email} error="${err.message}"`);
+      throw apiError(
+        'Account created but we could not send the verification email. ' +
+        'Please use "Resend verification email" on the login page to try again.',
+        502
+      );
+    }
+
+    return { message: 'Verification email sent. Please check your inbox.' };
+  },
+
+  async verifyEmail(token) {
+    if (!token) throw apiError('Token is required', 400);
+
+    const user = await userRepo.findByVerificationToken(token);
+    if (!user) {
+      logger.warn(`VERIFY_FAILED ✗ token not found or expired token=${token.slice(0, 8)}...`);
+      throw apiError('Invalid or expired verification link', 400);
+    }
+
+    await userRepo.updateById(user._id, {
+      $set:   { isVerified: true },
+      $unset: { emailVerificationToken: 1, emailVerificationExpires: 1 },
+    });
+
+    const updated = await userRepo.findById(user._id);
+    logger.info(`VERIFY_SUCCESS ✓ email=${updated.email}`);
+    return { token: signToken(updated), user: safeUser(updated) };
+  },
+
+  async login(email, password) {
+    // findByEmail returns password field (no select projection)
+    const user = await userRepo.findByEmail(email);
+    if (!user) throw apiError('Invalid credentials', 401);
+
+    if (!user.isVerified) throw apiError('Please verify your email before logging in', 403);
+    if (user.isBanned)    throw apiError('Your account has been suspended', 403);
+
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) throw apiError('Invalid credentials', 401);
+
+    return { token: signToken(user), user: safeUser(user) };
+  },
+
+  async forgotPassword(email) {
+    const user = await userRepo.findByEmail(email);
+
+    // Always succeed — do not leak whether email exists
+    if (user) {
+      const token     = uuidv4();
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+      await PasswordReset.create({ userId: user._id, token, expiresAt });
+      emailService
+        .sendPasswordResetEmail(user.email, token)
+        .catch(err => logger.error('Reset email failed:', err.message));
+    }
+
+    return { message: "If that email exists, a reset link was sent." };
+  },
+
+  async resetPassword(token, newPassword) {
+    if (!token) throw apiError('Token is required', 400);
+
+    const reset = await PasswordReset.findOne({
+      token,
+      expiresAt: { $gt: new Date() },
+      used: false,
+    });
+    if (!reset) throw apiError('Invalid or expired reset link', 400);
+
+    const hashed = await bcrypt.hash(newPassword, 12);
+    await userRepo.updateById(reset.userId, { password: hashed });
+    await PasswordReset.findByIdAndUpdate(reset._id, { used: true });
+
+    return { message: 'Password reset successfully. Please log in.' };
+  },
+
+  async resendVerification(email) {
+    const user = await userRepo.findByEmail(email);
+    if (!user || user.isVerified) {
+      // Silent — do not leak whether the account exists
+      return { message: 'If your account exists and is unverified, a new link has been sent.' };
+    }
+    const emailVerificationToken   = uuidv4();
+    const emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await userRepo.updateById(user._id, { emailVerificationToken, emailVerificationExpires });
+    logger.info(`VERIFY_TOKEN ✓ resend generated email=${email}`);
+    logger.info(`EMAIL_SEND_ATTEMPT ✓ resend email=${email}`);
+    try {
+      await emailService.sendVerificationEmail(email, emailVerificationToken);
+      // EMAIL_SENT ✓ logged inside emailService
+    } catch (err) {
+      logger.error(`EMAIL_FAILED ✗ resend email=${email} error="${err.message}"`);
+      throw apiError(
+        'Could not send verification email — SMTP error. Please try again later.',
+        502
+      );
+    }
+    return { message: 'If your account exists and is unverified, a new link has been sent.' };
+  },
+
+  async getMe(userId) {
+    const user = await userRepo.findById(userId);
+    if (!user) throw apiError('User not found', 404);
+    return user;
+  },
+
+  async updateProfile(userId, { name, campusId }) {
+    const updated = await userRepo.updateById(userId, { name, campusId });
+    if (!updated) throw apiError('User not found', 404);
+    return safeUser(updated);
+  },
+
+  async changePassword(userId, currentPassword, newPassword) {
+    const user = await userRepo.findByIdWithPassword(userId);
+    if (!user) throw apiError('User not found', 404);
+    const match = await bcrypt.compare(currentPassword, user.password);
+    if (!match) throw apiError('Current password is incorrect', 400);
+    const hashed = await bcrypt.hash(newPassword, 12);
+    await userRepo.updateById(userId, { password: hashed });
+    return { message: 'Password changed successfully' };
+  },
+
+  async getMyStats(userId) {
+    const [lostCount, foundCount, recoveredCount] = await Promise.all([
+      Item.countDocuments({ userId, type: 'lost' }),
+      Item.countDocuments({ userId, type: 'found' }),
+      Item.countDocuments({ userId, status: { $in: ['CLAIMED', 'RETURNED'] } }),
+    ]);
+    return { lostCount, foundCount, recoveredCount };
+  },
+};
+
+module.exports = authService;

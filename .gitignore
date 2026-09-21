@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+.venv/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+
+# Build outputs
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+yarn-error.log*
+
+# Misc
+.cache/
+*.tgz
